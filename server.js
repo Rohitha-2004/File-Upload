@@ -1,175 +1,163 @@
-// Required modules
-const express = require('express');
-const bodyParser = require('body-parser');
-const cors = require('cors');
-const multer = require('multer');
-const nodemailer = require('nodemailer');
-const mysql = require('mysql');
-const path = require('path');
-const fs = require('fs');
-const csv = require('csv-parser');
+import React, { useState } from 'react';
+import { Upload, message, Button, Modal, Spin, Radio } from 'antd';
+import { CloudUploadOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import axios from 'axios';
+import styled from 'styled-components';
 
-// Create Express app
-const app = express();
-const port = 5000;
+const { Dragger } = Upload;
 
-// Middleware setup
-app.use(cors());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+const FileUpload = () => {
+  const [selectedTable, setSelectedTable] = useState(null);
+  const [openConfirmModal, setOpenConfirmModal] = useState(false);
+  const [fileList, setFileList] = useState([]);
+  const [actionType, setActionType] = useState('append'); // Default action is append/insert
+  const [loading, setLoading] = useState(false); // State for loading spinner
 
-// MySQL database connection setup
-const db = mysql.createConnection({
-  host: 'localhost',
-  user: 'root', // Replace with your MySQL username
-  password: 'Rohitha@2004', // Replace with your MySQL password
-  database: 'barclays', // Replace with your MySQL database name
-});
-
-// Connect to MySQL
-db.connect((err) => {
-  if (err) {
-    console.error('Database connection error:', err);
-    throw err;
-  }
-  console.log('MySQL connected...');
-});
-
-// Multer setup for file upload
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadPath = path.join(__dirname, 'uploads');
-    if (!fs.existsSync(uploadPath)) {
-      fs.mkdirSync(uploadPath);
-    }
-    cb(null, uploadPath); // Save uploaded files to the 'uploads' directory
-  },
-  filename: function (req, file, cb) {
-    cb(null, file.originalname); // Keep the original file name
-  },
-});
-const upload = multer({ storage: storage });
-
-// Nodemailer setup for sending confirmation emails
-const transporter = nodemailer.createTransport({
-  host: 'smtp.office365.com',
-  port: 587,
-  secure: false,
-  auth: {
-    user: 'rohitha.papolu@outlook.com', // Replace with your email credentials
-    pass: 'Rohitha@2004', // Replace with your email password
-  },
-});
-
-// Endpoint for handling file uploads
-app.post('/api/uploadFile', upload.single('file'), (req, res) => {
-  try {
-    const file = req.file;
-    const { table, actionType } = req.body;
-
-    console.log('File:', file);
-    console.log('Table:', table);
-    console.log('Action Type:', actionType);
-
-    if (!file) {
-      return res.status(400).json({ message: 'No file uploaded.' });
-    }
-    if (!table) {
-      return res.status(400).json({ message: 'No table selected.' });
-    }
-    if (!actionType || (actionType !== 'append' && actionType !== 'truncate_insert')) {
-      return res.status(400).json({ message: 'Invalid action type specified.' });
-    }
-
-    // Parse CSV file and insert or truncate/insert data into database based on actionType
-    const filePath = path.join(__dirname, 'uploads', file.originalname);
-    const results = [];
-
-    fs.createReadStream(filePath)
-      .pipe(csv())
-      .on('data', (data) => results.push(data))
-      .on('end', () => {
-        // Begin transaction
-        db.beginTransaction((err) => {
-          if (err) {
-            console.error('Error beginning transaction:', err);
-            return res.status(500).json({ message: 'Failed to begin database transaction.', error: err.message });
-          }
-
-          // Truncate table if actionType is 'truncate_insert'
-          if (actionType === 'truncate_insert') {
-            const truncateSql = `TRUNCATE TABLE ${table}`;
-            db.query(truncateSql, (err, result) => {
-              if (err) {
-                return db.rollback(() => {
-                  console.error('Error truncating table:', err);
-                  res.status(500).json({ message: 'Failed to truncate table.', error: err.message });
-                });
-              }
-              console.log('Table truncated:', result);
-              insertData(results); // After truncating, insert new data
-            });
-          } else {
-            insertData(results); // If actionType is 'append', simply insert data
-          }
-        });
-      });
-
-    function insertData(data) {
-      // Construct SQL query to insert data
-      const insertSql = `INSERT INTO ${table} (id, name) VALUES ?`;
-      const values = data.map(row => [row.id, row.name]); // Assuming id is provided in the CSV file
-
-      db.query(insertSql, [values], (err, result) => {
-        if (err) {
-          return db.rollback(() => {
-            console.error('Error inserting data:', err);
-            res.status(500).json({ message: 'Failed to insert data into table.', error: err.message });
-          });
-        }
-
-        db.commit((err) => {
-          if (err) {
-            return db.rollback(() => {
-              console.error('Error committing transaction:', err);
-              res.status(500).json({ message: 'Failed to commit transaction.', error: err.message });
-            });
-          }
-
-          console.log('Transaction committed successfully.');
-          // Send confirmation email after successful transaction
-          sendConfirmationEmail(file, table, actionType, res);
-        });
-      });
-    }
-
-  } catch (err) {
-    console.error('Error uploading file:', err);
-    res.status(500).json({ message: 'Failed to upload file.', error: err.message });
-  }
-});
-
-function sendConfirmationEmail(file, table, actionType, res) {
-  // Send confirmation email
-  const mailOptions = {
-    from: 'rohitha.papolu@outlook.com',
-    to: '2100030400@kluniversity.in',
-    subject: 'File Uploaded',
-    text: `File ${file.originalname} has been uploaded and ${actionType === 'truncate_insert' ? 'truncated and inserted' : 'appended'} to the ${table} table.`,
+  const handleTableChange = (e) => {
+    setSelectedTable(e.target.value);
   };
 
-  transporter.sendMail(mailOptions, (err, info) => {
-    if (err) {
-      console.error('Error sending email:', err);
-      return res.status(500).json({ message: 'Failed to send confirmation email.', error: err.message });
+  const handleActionTypeChange = (e) => {
+    setActionType(e.target.value);
+  };
+
+  const handleUpload = () => {
+    if (!selectedTable || fileList.length === 0) {
+      message.error('Please select a table and upload a file.');
+      return;
     }
-    console.log('Email sent:', info.response);
 
-    res.status(200).json({ message: 'File uploaded successfully.' });
-  });
-}
+    setLoading(true); // Show loading spinner on confirm
 
-// Start the server
-app.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
-});
+    const formData = new FormData();
+    formData.append('table', selectedTable); // Append selected table
+    formData.append('actionType', actionType); // Append action type
+
+    fileList.forEach(file => {
+      formData.append('file', file);
+    });
+
+    axios.post('http://localhost:5000/api/uploadFile', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+      .then(response => {
+        message.success(response.data.message || 'File uploaded successfully.');
+        setOpenConfirmModal(false);
+        setFileList([]);
+      })
+      .catch(error => {
+        console.error('Upload error:', error);
+        message.error('Failed to upload file.');
+      })
+      .finally(() => {
+        setLoading(false); // Hide loading spinner after response
+        setOpenConfirmModal(false);
+      });
+  };
+
+  const props = {
+    onRemove: file => {
+      const index = fileList.indexOf(file);
+      const newFileList = fileList.slice();
+      newFileList.splice(index, 1);
+      setFileList(newFileList);
+    },
+    beforeUpload: file => {
+      setFileList([file]); // Only allow one file at a time
+      return false;
+    },
+    fileList,
+  };
+
+  return (
+    <Container>
+      <Title>Select table</Title>
+      <Radio.Group onChange={handleTableChange} style={{ marginBottom: '16px' }}>
+        <Radio value="school">School</Radio>
+        <Radio value="college">College</Radio>
+        <Radio value="office">Office</Radio>
+      </Radio.Group>
+      <Title>Select Action</Title>
+      <Radio.Group onChange={handleActionTypeChange} value={actionType} style={{ marginBottom: '16px' }}>
+        <Radio value="append">Append</Radio>
+        <Radio value="truncate_insert">Truncate and Insert</Radio>
+      </Radio.Group>
+      <Dragger {...props} className="ant-upload">
+        {fileList.length === 0 ? (
+          <>
+            <p className="ant-upload-drag-icon">
+              <CloudUploadOutlined style={{ fontSize: '36px', color: '#1890ff' }} />
+            </p>
+            <p className="ant-upload-text" style={{ fontSize: '16px', color: '#1890ff' }}>
+              Click or drag file to this area to upload
+            </p>
+          </>
+        ) : (
+          <p className="ant-upload-drag-icon">
+            <CheckCircleOutlined style={{ fontSize: '36px', color: '#52c41a' }} />
+          </p>
+        )}
+      </Dragger>
+      <div style={{ textAlign: 'center', marginTop: '16px' }}>
+        <Button
+          type="primary"
+          onClick={() => setOpenConfirmModal(true)}
+          style={{ marginTop: '16px' }}
+          disabled={loading}
+        >
+          Confirm
+        </Button>
+        <Modal
+          title={`Confirm Data Action on ${selectedTable}`}
+          visible={openConfirmModal}
+          onOk={handleUpload}
+          onCancel={() => setOpenConfirmModal(false)}
+          okText="Confirm"
+          cancelText="Cancel"
+        >
+          {loading ? (
+            <div style={{ textAlign: 'center' }}>
+              <Spin size="large" />
+              <p>Uploading...</p>
+            </div>
+          ) : (
+            <p>Are you sure you want to {actionType === 'truncate_insert' ? 'truncate and insert' : 'append'} data for {selectedTable}?</p>
+          )}
+        </Modal>
+      </div>
+    </Container>
+  );
+};
+
+const Container = styled.div`
+  padding: 20px;
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  margin-top: 40px;
+  position: relative;
+  background-color: #f0f2f5; /* Set background to a light gray color */
+  
+  .ant-upload {
+    width: 300px;
+    height: 300px;
+    border: 1px dashed #1890ff;
+    background: #ffffff; /* Set the background to white */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+`;
+
+const Title = styled.h2`
+  margin-bottom: 16px;
+  color: #1890ff; /* Set the title color to blue */
+  text-align: center; /* Center the title */
+`;
+
+export default FileUpload;
