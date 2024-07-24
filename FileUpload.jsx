@@ -3,7 +3,6 @@ import { Upload, message, Button, Modal, Spin, Radio } from 'antd';
 import { CloudUploadOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import styled from 'styled-components';
-import backgroundVideo from './background.mp4'; // Import the background video file
 
 const { Dragger } = Upload;
 
@@ -74,10 +73,6 @@ const FileUpload = () => {
 
   return (
     <Container>
-      <video className="background-video" autoPlay loop muted>
-        <source src={backgroundVideo} type="video/mp4" />
-        Your browser does not support the video tag.
-      </video>
       <Title>Select table</Title>
       <Radio.Group onChange={handleTableChange} style={{ marginBottom: '16px' }}>
         <Radio value="school">School</Radio>
@@ -145,16 +140,8 @@ const Container = styled.div`
   justify-content: flex-start;
   margin-top: 40px;
   position: relative;
-
-  .background-video {
-    position: fixed;
-    right: 0;
-    bottom: 0;
-    min-width: 100%;
-    min-height: 100%;
-    z-index: -1;
-  }
-
+  background-color: #f0f2f5; /* Set background to a light gray color */
+  
   .ant-upload {
     width: 300px;
     height: 300px;
@@ -174,4 +161,3 @@ const Title = styled.h2`
 `;
 
 export default FileUpload;
-
