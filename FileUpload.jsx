@@ -75,9 +75,9 @@ const FileUpload = () => {
     <Container>
       <Title>Select table</Title>
       <Radio.Group onChange={handleTableChange} style={{ marginBottom: '16px' }}>
-        <Radio value="school">School</Radio>
-        <Radio value="college">College</Radio>
-        <Radio value="office">Office</Radio>
+        <Radio value="service_bnow_type">Service BNow Type</Radio>
+        <Radio value="colleague_delight_inc_data">Colleague Delight Inc Data</Radio>
+        <Radio value="assignment_group_poc">Assignment Group POC</Radio>
       </Radio.Group>
       <Title>Select Action</Title>
       <Radio.Group onChange={handleActionTypeChange} value={actionType} style={{ marginBottom: '16px' }}>
