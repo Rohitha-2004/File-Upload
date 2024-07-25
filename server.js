@@ -43,24 +43,10 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-const convertValue = (value, columnType) => {
+const escapeValue = (value) => {
   if (value === undefined || value === null || value === '') {
     return 'NULL';
   }
-
-  let convertedValue = value;
-
-  if (columnType.includes('int') || columnType.includes('bigint')) {
-    convertedValue = parseInt(value, 10);
-    return isNaN(convertedValue) ? 'NULL' : convertedValue;
-  } else if (columnType.includes('float') || columnType.includes('double')) {
-    convertedValue = parseFloat(value);
-    return isNaN(convertedValue) ? 'NULL' : convertedValue;
-  } else if (columnType.includes('date') || columnType.includes('datetime')) {
-    const date = new Date(value);
-    return isNaN(date.getTime()) ? 'NULL' : `'${date.toISOString().slice(0, 19).replace('T', ' ')}'`;
-  }
-
   return `'${value.replace(/'/g, "''")}'`;
 };
 
@@ -137,9 +123,8 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
 
         const insertValues = results.map(row => {
           const values = validHeaders.map(header => {
-            const columnType = columns.find(col => col.Field === header).Type;
-            const value = convertValue(row[header], columnType);
-            return value;
+            const value = row[header];
+            return escapeValue(value);
           });
           return `(${values.join(',')})`;
         }).join(',');
@@ -174,5 +159,4 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
 });
-
 
