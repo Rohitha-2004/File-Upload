@@ -97,6 +97,9 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
         results.push(data);
       })
       .on('end', () => {
+        // Print rows received from CSV for debugging
+        console.log('CSV Rows:', results);
+
         db.beginTransaction((err) => {
           if (err) {
             return res.status(500).json({ message: 'Failed to begin database transaction.', error: err.message });
@@ -134,13 +137,7 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
 
         // Construct SQL insertion query
         const insertValues = results.map(row => {
-          const values = validHeaders.map(header => {
-            const value = row[header];
-            const escapedValue = escapeValue(value);
-            // Debugging output
-            console.log(`Column: ${header}, Value: ${value}, Escaped Value: ${escapedValue}`);
-            return escapedValue;
-          });
+          const values = validHeaders.map(header => escapeValue(row[header]));
           return `(${values.join(',')})`;
         }).join(',');
 
