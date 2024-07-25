@@ -1,3 +1,6 @@
+
+
+
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
@@ -10,10 +13,12 @@ const csv = require('csv-parser');
 const app = express();
 const port = 5000;
 
+// Middleware setup
 app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
+// MySQL database connection setup
 const db = mysql.createConnection({
   host: 'localhost',
   user: 'root',
@@ -21,6 +26,7 @@ const db = mysql.createConnection({
   database: 'barclays',
 });
 
+// Connect to MySQL
 db.connect((err) => {
   if (err) {
     console.error('Database connection error:', err);
@@ -29,6 +35,7 @@ db.connect((err) => {
   console.log('MySQL connected...');
 });
 
+// Multer setup for file upload
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadPath = path.join(__dirname, 'uploads');
@@ -43,6 +50,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
+// Escape value for SQL insertion
 const escapeValue = (value) => {
   if (value === undefined || value === null || value === '') {
     return 'NULL';
@@ -50,6 +58,7 @@ const escapeValue = (value) => {
   return `'${value.replace(/'/g, "''")}'`;
 };
 
+// Get table columns for dynamic query construction
 const getTableColumns = (tableName, callback) => {
   const query = `DESCRIBE ${tableName}`;
   db.query(query, (err, results) => {
@@ -61,6 +70,7 @@ const getTableColumns = (tableName, callback) => {
   });
 };
 
+// Endpoint for handling file uploads
 app.post('/api/uploadFile', upload.single('file'), (req, res) => {
   try {
     const file = req.file;
@@ -80,6 +90,7 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
     const results = [];
     let headers = [];
 
+    // Read CSV file
     fs.createReadStream(filePath)
       .pipe(csv())
       .on('headers', (headerList) => {
@@ -102,14 +113,16 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
                   res.status(500).json({ message: 'Failed to truncate table.', error: err.message });
                 });
               }
-              insertData();
+              console.log('Table truncated:', result);
+              insertData(); // After truncating, insert new data
             });
           } else {
-            insertData();
+            insertData(); // If actionType is 'append', simply insert data
           }
         });
       });
 
+    // Insert data into the table
     function insertData() {
       getTableColumns(table, (err, columns) => {
         if (err) {
@@ -118,9 +131,11 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
           });
         }
 
+        // Extract valid columns from table
         const validColumns = columns.map(col => col.Field);
         const validHeaders = headers.filter(header => validColumns.includes(header));
 
+        // Construct SQL insertion query
         const insertValues = results.map(row => {
           const values = validHeaders.map(header => {
             const value = row[header];
@@ -130,7 +145,11 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
         }).join(',');
 
         const insertSql = `INSERT INTO ${table} (${validHeaders.join(',')}) VALUES ${insertValues}`;
+        
+        // Debugging output
+        console.log('Generated SQL Query:', insertSql);
 
+        // Execute insertion query
         db.query(insertSql, (err, result) => {
           if (err) {
             return db.rollback(() => {
@@ -159,4 +178,3 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
 });
-
