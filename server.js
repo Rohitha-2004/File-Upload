@@ -55,6 +55,17 @@ const escapeValue = (value) => {
   return `'${value.replace(/'/g, "''")}'`;
 };
 
+// Function to get table columns
+const getTableColumns = (table, callback) => {
+  const query = `DESCRIBE ${table}`;
+  db.query(query, (err, results) => {
+    if (err) {
+      return callback(err);
+    }
+    callback(null, results);
+  });
+};
+
 // Endpoint for handling file uploads
 app.post('/api/uploadFile', upload.single('file'), (req, res) => {
   try {
@@ -163,4 +174,5 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
 });
+
 
