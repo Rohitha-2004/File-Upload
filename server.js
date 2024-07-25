@@ -48,11 +48,28 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
+// Helper function to get table columns
+const getTableColumns = (tableName, callback) => {
+  db.query(`DESCRIBE ${tableName}`, (err, results) => {
+    if (err) {
+      console.error('Error getting table columns:', err);
+      callback(err, null);
+    } else {
+      const columns = results.map(col => col.Field);
+      callback(null, columns);
+    }
+  });
+};
+
 // Endpoint for handling file uploads
 app.post('/api/uploadFile', upload.single('file'), (req, res) => {
   try {
     const file = req.file;
     const { table, actionType } = req.body;
+
+    console.log('File:', file);
+    console.log('Table:', table);
+    console.log('Action Type:', actionType);
 
     if (!file) {
       return res.status(400).json({ message: 'No file uploaded.' });
@@ -86,13 +103,14 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
           // Truncate table if actionType is 'truncate_insert'
           if (actionType === 'truncate_insert') {
             const truncateSql = `TRUNCATE TABLE ${table}`;
-            db.query(truncateSql, (err) => {
+            db.query(truncateSql, (err, result) => {
               if (err) {
                 return db.rollback(() => {
                   console.error('Error truncating table:', err);
                   res.status(500).json({ message: 'Failed to truncate table.', error: err.message });
                 });
               }
+              console.log('Table truncated:', result);
               insertData(); // After truncating, insert new data
             });
           } else {
@@ -102,33 +120,45 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
       });
 
     function insertData() {
-      // Construct dynamic SQL query based on CSV headers
-      const columns = headers.join(', ');
-      const placeholders = headers.map(() => '?').join(', ');
-      const insertSql = `INSERT INTO ${table} (${columns}) VALUES ?`;
-
-      // Map data to match the column structure
-      const values = results.map(row => headers.map(header => row[header] || null));
-
-      // Insert all rows in one query
-      db.query(insertSql, [values], (err) => {
+      // Get the columns of the table
+      getTableColumns(table, (err, columns) => {
         if (err) {
           return db.rollback(() => {
-            console.error('Error inserting data:', err);
-            res.status(500).json({ message: 'Failed to insert data into table.', error: err.message });
+            console.error('Error getting table columns:', err);
+            res.status(500).json({ message: 'Failed to get table columns.', error: err.message });
           });
         }
 
-        db.commit((err) => {
+        // Filter out any headers not in the table columns
+        const validHeaders = headers.filter(header => columns.includes(header));
+        
+        // Construct dynamic SQL query based on CSV headers
+        const placeholders = validHeaders.map(() => '?').join(', ');
+        const insertSql = `INSERT INTO ${table} (${validHeaders.join(', ')}) VALUES ${results.map(() => `(${placeholders})`).join(', ')}`;
+
+        // Map data to match the column structure
+        const values = results.flatMap(row => validHeaders.map(header => row[header] || null));
+
+        // Insert all rows in one query
+        db.query(insertSql, values, (err, result) => {
           if (err) {
             return db.rollback(() => {
-              console.error('Error committing transaction:', err);
-              res.status(500).json({ message: 'Failed to commit transaction.', error: err.message });
+              console.error('Error inserting data:', err);
+              res.status(500).json({ message: 'Failed to insert data into table.', error: err.message });
             });
           }
 
-          console.log('Transaction committed successfully.');
-          res.status(200).json({ message: 'File uploaded and data inserted successfully.' });
+          db.commit((err) => {
+            if (err) {
+              return db.rollback(() => {
+                console.error('Error committing transaction:', err);
+                res.status(500).json({ message: 'Failed to commit transaction.', error: err.message });
+              });
+            }
+
+            console.log('Transaction committed successfully.');
+            res.status(200).json({ message: 'File uploaded and data inserted successfully.' });
+          });
         });
       });
     }
