@@ -48,36 +48,49 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-// Helper function to get table columns and their data types
-const getTableColumns = (tableName, callback) => {
-  db.query(`DESCRIBE ${tableName}`, (err, results) => {
-    if (err) {
-      console.error('Error getting table columns:', err);
-      callback(err, null);
-    } else {
-      const columns = results.map(col => ({ name: col.Field, type: col.Type }));
-      callback(null, columns);
-    }
-  });
-};
-
-// Helper function to convert CSV values based on column types
+// Convert values based on column type
 const convertValue = (value, columnType) => {
   if (value === undefined || value === null || value === '') {
+    console.log(`Converting empty or undefined value to null for type: ${columnType}`);
     return null; // Convert empty values to null
   }
 
+  let convertedValue = value;
+
   if (columnType.includes('int') || columnType.includes('bigint')) {
-    return parseInt(value, 10);
+    convertedValue = parseInt(value, 10);
+    if (isNaN(convertedValue)) {
+      console.log(`Failed to convert value '${value}' to integer for type: ${columnType}`);
+      return null;
+    }
+  } else if (columnType.includes('float') || columnType.includes('double')) {
+    convertedValue = parseFloat(value);
+    if (isNaN(convertedValue)) {
+      console.log(`Failed to convert value '${value}' to float for type: ${columnType}`);
+      return null;
+    }
+  } else if (columnType.includes('date') || columnType.includes('datetime')) {
+    convertedValue = new Date(value);
+    if (isNaN(convertedValue.getTime())) {
+      console.log(`Failed to convert value '${value}' to date for type: ${columnType}`);
+      return null;
+    }
   }
-  if (columnType.includes('float') || columnType.includes('double')) {
-    return parseFloat(value);
-  }
-  if (columnType.includes('date') || columnType.includes('datetime')) {
-    return new Date(value);
-  }
-  // Add more type conversions if needed
-  return value;
+
+  console.log(`Converted value '${value}' to '${convertedValue}' for type: ${columnType}`);
+  return convertedValue;
+};
+
+// Get columns of the table
+const getTableColumns = (tableName, callback) => {
+  const query = `DESCRIBE ${tableName}`;
+  db.query(query, (err, results) => {
+    if (err) {
+      console.error('Error fetching table columns:', err);
+      return callback(err);
+    }
+    callback(null, results);
+  });
 };
 
 // Endpoint for handling file uploads
@@ -108,10 +121,15 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
     fs.createReadStream(filePath)
       .pipe(csv())
       .on('headers', (headerList) => {
-        headers = headerList; // Store headers to use for dynamic SQL column creation
+        headers = headerList;
+        console.log('CSV Headers:', headers);
       })
-      .on('data', (data) => results.push(data))
+      .on('data', (data) => {
+        console.log('CSV Data Row:', data);
+        results.push(data);
+      })
       .on('end', () => {
+        console.log('CSV Parsing completed.');
         // Begin transaction
         db.beginTransaction((err) => {
           if (err) {
@@ -149,18 +167,26 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
         }
 
         // Filter out any headers not in the table columns
-        const validColumns = columns.map(col => col.name);
+        const validColumns = columns.map(col => col.Field);
         const validHeaders = headers.filter(header => validColumns.includes(header));
         
+        console.log('Valid Headers:', validHeaders);
+
         // Construct dynamic SQL query based on CSV headers
         const placeholders = validHeaders.map(() => '?').join(', ');
         const insertSql = `INSERT INTO ${table} (${validHeaders.join(', ')}) VALUES ${results.map(() => `(${placeholders})`).join(', ')}`;
+        
+        console.log('Insert SQL:', insertSql);
 
         // Map data to match the column structure and types
         const values = results.flatMap(row => validHeaders.map(header => {
-          const columnType = columns.find(col => col.name === header).type;
-          return convertValue(row[header], columnType);
+          const columnType = columns.find(col => col.Field === header).Type;
+          const value = convertValue(row[header], columnType);
+          console.log(`Mapping header '${header}' with value '${row[header]}' to '${value}'`);
+          return value;
         }));
+
+        console.log('Values to be inserted:', values);
 
         // Insert all rows in one query
         db.query(insertSql, values, (err, result) => {
@@ -196,6 +222,5 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
 });
-
 
 
