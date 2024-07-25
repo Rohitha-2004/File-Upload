@@ -1,6 +1,3 @@
-
-
-
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
@@ -139,7 +136,10 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
         const insertValues = results.map(row => {
           const values = validHeaders.map(header => {
             const value = row[header];
-            return escapeValue(value);
+            const escapedValue = escapeValue(value);
+            // Debugging output
+            console.log(`Column: ${header}, Value: ${value}, Escaped Value: ${escapedValue}`);
+            return escapedValue;
           });
           return `(${values.join(',')})`;
         }).join(',');
