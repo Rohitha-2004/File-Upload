@@ -1,4 +1,3 @@
-// Required modules
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
@@ -55,10 +54,6 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
     const file = req.file;
     const { table, actionType } = req.body;
 
-    console.log('File:', file);
-    console.log('Table:', table);
-    console.log('Action Type:', actionType);
-
     if (!file) {
       return res.status(400).json({ message: 'No file uploaded.' });
     }
@@ -72,9 +67,13 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
     // Parse CSV file and insert or truncate/insert data into database based on actionType
     const filePath = path.join(__dirname, 'uploads', file.originalname);
     const results = [];
+    let headers = [];
 
     fs.createReadStream(filePath)
       .pipe(csv())
+      .on('headers', (headerList) => {
+        headers = headerList; // Store headers to use for dynamic SQL column creation
+      })
       .on('data', (data) => results.push(data))
       .on('end', () => {
         // Begin transaction
@@ -87,28 +86,32 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
           // Truncate table if actionType is 'truncate_insert'
           if (actionType === 'truncate_insert') {
             const truncateSql = `TRUNCATE TABLE ${table}`;
-            db.query(truncateSql, (err, result) => {
+            db.query(truncateSql, (err) => {
               if (err) {
                 return db.rollback(() => {
                   console.error('Error truncating table:', err);
                   res.status(500).json({ message: 'Failed to truncate table.', error: err.message });
                 });
               }
-              console.log('Table truncated:', result);
-              insertData(results); // After truncating, insert new data
+              insertData(); // After truncating, insert new data
             });
           } else {
-            insertData(results); // If actionType is 'append', simply insert data
+            insertData(); // If actionType is 'append', simply insert data
           }
         });
       });
 
-    function insertData(data) {
-      // Construct SQL query to insert data
-      const insertSql = `INSERT INTO ${table} (id, name) VALUES ?`;
-      const values = data.map(row => [row.id, row.name]); // Assuming id and name are provided in the CSV file
+    function insertData() {
+      // Construct dynamic SQL query based on CSV headers
+      const columns = headers.join(', ');
+      const placeholders = headers.map(() => '?').join(', ');
+      const insertSql = `INSERT INTO ${table} (${columns}) VALUES ?`;
 
-      db.query(insertSql, [values], (err, result) => {
+      // Map data to match the column structure
+      const values = results.map(row => headers.map(header => row[header] || null));
+
+      // Insert all rows in one query
+      db.query(insertSql, [values], (err) => {
         if (err) {
           return db.rollback(() => {
             console.error('Error inserting data:', err);
@@ -140,4 +143,5 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
 });
+
 
