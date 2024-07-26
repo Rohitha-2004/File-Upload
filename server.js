@@ -47,17 +47,6 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-// Function to get table columns
-const getTableColumns = (table, callback) => {
-  const query = `DESCRIBE ${table}`;
-  db.query(query, (err, results) => {
-    if (err) {
-      return callback(err);
-    }
-    callback(null, results);
-  });
-};
-
 // Endpoint for handling file uploads
 app.post('/api/uploadFile', upload.single('file'), (req, res) => {
   try {
@@ -115,48 +104,36 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
 
     // Insert data into the table
     function insertData() {
-      getTableColumns(table, (err, columns) => {
+      // Construct SQL insertion query
+      const insertValues = results.map(row => {
+        const values = headers.map(header => {
+          const value = row[header];
+          return value !== undefined && value !== null && value !== '' ? `'${value.replace(/'/g, "''")}'` : 'NULL';
+        });
+        return `(${values.join(',')})`;
+      }).join(',');
+
+      const insertSql = `INSERT INTO ${table} VALUES ${insertValues}`;
+      
+      // Debugging output
+      console.log('Generated SQL Query:', insertSql);
+
+      // Execute insertion query
+      db.query(insertSql, (err, result) => {
         if (err) {
           return db.rollback(() => {
-            res.status(500).json({ message: 'Failed to get table columns.', error: err.message });
+            res.status(500).json({ message: 'Failed to insert data into table.', error: err.message });
           });
         }
 
-        // Extract valid columns from table
-        const validColumns = columns.map(col => col.Field);
-        const validHeaders = headers.filter(header => validColumns.includes(header));
-
-        // Construct SQL insertion query
-        const insertValues = results.map(row => {
-          const values = validHeaders.map(header => {
-            const value = row[header];
-            return value !== undefined && value !== null && value !== '' ? `'${value.replace(/'/g, "''")}'` : 'NULL';
-          });
-          return `(${values.join(',')})`;
-        }).join(',');
-
-        const insertSql = `INSERT INTO ${table} (${validHeaders.join(',')}) VALUES ${insertValues}`;
-        
-        // Debugging output
-        console.log('Generated SQL Query:', insertSql);
-
-        // Execute insertion query
-        db.query(insertSql, (err, result) => {
+        db.commit((err) => {
           if (err) {
             return db.rollback(() => {
-              res.status(500).json({ message: 'Failed to insert data into table.', error: err.message });
+              res.status(500).json({ message: 'Failed to commit transaction.', error: err.message });
             });
           }
 
-          db.commit((err) => {
-            if (err) {
-              return db.rollback(() => {
-                res.status(500).json({ message: 'Failed to commit transaction.', error: err.message });
-              });
-            }
-
-            res.status(200).json({ message: 'File uploaded and data inserted successfully.' });
-          });
+          res.status(200).json({ message: 'File uploaded and data inserted successfully.' });
         });
       });
     }
@@ -169,5 +146,4 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
 });
-
 
