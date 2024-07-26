@@ -77,9 +77,6 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
         results.push(data);
       })
       .on('end', () => {
-        // Print rows received from CSV for debugging
-        console.log('CSV Rows:', results);
-
         db.beginTransaction((err) => {
           if (err) {
             return res.status(500).json({ message: 'Failed to begin database transaction.', error: err.message });
@@ -93,7 +90,6 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
                   res.status(500).json({ message: 'Failed to truncate table.', error: err.message });
                 });
               }
-              console.log('Table truncated:', result);
               insertData(); // After truncating, insert new data
             });
           } else {
@@ -114,9 +110,6 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
       }).join(',');
 
       const insertSql = `INSERT INTO ${table} VALUES ${insertValues}`;
-      
-      // Debugging output
-      console.log('Generated SQL Query:', insertSql);
 
       // Execute insertion query
       db.query(insertSql, (err, result) => {
@@ -146,4 +139,3 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
 });
-
