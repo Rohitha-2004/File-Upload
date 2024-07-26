@@ -47,14 +47,6 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-// Escape value for SQL insertion
-const escapeValue = (value) => {
-  if (value === undefined || value === null || value === '') {
-    return 'NULL';
-  }
-  return `'${value.replace(/'/g, "''")}'`;
-};
-
 // Function to get table columns
 const getTableColumns = (table, callback) => {
   const query = `DESCRIBE ${table}`;
@@ -136,7 +128,10 @@ app.post('/api/uploadFile', upload.single('file'), (req, res) => {
 
         // Construct SQL insertion query
         const insertValues = results.map(row => {
-          const values = validHeaders.map(header => escapeValue(row[header]));
+          const values = validHeaders.map(header => {
+            const value = row[header];
+            return value !== undefined && value !== null && value !== '' ? `'${value.replace(/'/g, "''")}'` : 'NULL';
+          });
           return `(${values.join(',')})`;
         }).join(',');
 
